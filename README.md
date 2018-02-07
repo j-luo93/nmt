@@ -1,3 +1,5 @@
+Written in PyTorch.
+
 ## Training
 
 `python main.py train <data_dir> -c -s <source_lang> -cd <cell_dimension/hidden_size>` 
