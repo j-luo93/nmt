@@ -3,7 +3,7 @@ from __future__ import division, print_function
 import sys
 
 from table import Table
-from vocab import UNK_ID, POS_UNK_IDs
+from vocab import UNK_ID
 
 import codecs
 

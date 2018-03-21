@@ -15,8 +15,7 @@ _EOS = '_EOS'
 _UNK = '_UNK'
 _START_VOCAB = [_PAD, _SOS, _EOS, _UNK]
 
-_POSUNK = ['_UNK_%d' %p for p in xrange(-7, 8)]
-_START_VOCAB_TGT = [_PAD, _SOS, _EOS, _UNK] + _POSUNK
+_START_VOCAB_TGT = [_PAD, _SOS, _EOS, _UNK]
 
 PAD_ID = 0
 SOS_ID = 1
