@@ -1,6 +1,8 @@
 ## Todo 
 -[x] clear up `utils`
 -[ ] transformer codebase
+-[ ] change `cell_dim` to `cell_size` or (`n_units`), to differ from `dim=?` argument
+-[ ] compare w/ pretrained wv and wo
 
 ## Initial Setup
 

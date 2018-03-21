@@ -1,10 +1,10 @@
-from __future__ import print_function
+from __future__ import print_function, division
 
 import torch
 import torch.nn as nn
 import math
 
-from utils.helper import get_zeros, get_variable, where, get_values
+from utils.helper import get_zeros, get_variable, where, get_values, NEG_INF
 from utils.LSTMState import LSTMState
 from models_utils import NEG_INF
 
@@ -80,3 +80,84 @@ class GlobalAttention(nn.Module):
         cat = torch.cat([context, h_t], 1)
         h_tilde = nn.functional.tanh(self.hidden(self.drop(cat)))
         return h_tilde, alignment.t().contiguous() # NOTE alignment now bs x sl, used for loss module
+        
+class PositionalEncoding(nn.Module):
+    
+    def __init__(self, cell_dim, denominator=10000):
+        super(PositionalEncoding, self).__init__()
+        assert cell_dim % 2 == 0, 'cell dim must be even'
+        self.cell_dim = cell_dim
+        
+        pow = torch.arange(1, self.cell_dim // 2 + 1).long() # NOTE starting with 1
+        self.base = get_variable(torch.pow(denominator, pow))
+    
+    def forward(self, position, batch_size): # assuming position is just an integer
+        x = (position + 1) / self.base # NOTE starting with 1
+        return torch.cat([torch.sin(x), torch.cos(x)], 0).view(1, self.cell_dim).expand(batch_size, self.cell_dim)
+
+class ScaledDotProductAttention(nn.Module):
+    
+    def __init__(self, cell_dim):
+        super(ScaledDotProductAttention, self).__init__()
+        self.cell_dim = cell_dim
+        
+    def forward(self, query, key, value, mask=None): # corresponding to Q, K, and V in the original paper
+        import ipdb; ipdb.set_trace()
+        bs, sl, d = value.size()
+        mm = query.matmul(key)
+        w = nn.functional.log_softmax(mm / math.sqrt(self.cell_dim), dim=2).exp()
+        res = (w.view(bs, sl, sl, 1) * value.view(bs, 1, sl, d)).sum(dim=2) # bs x sl x d
+        return res
+        
+class MultiHeadAttention(nn.Module):
+    
+    def __init__(self, n_heads, cell_dim, query_size, key_size, value_size):
+        super(MultiLayerRNNCell, self).__init__()
+        self.n_heads = n_heads
+        self.cell_dim = cell_dim
+        
+        self.Wq = nn.Linear(query_size, cell_dim * n_heads)
+        self.Wk = nn.Linear(key_size, cell_dim * n_heads)
+        self.Wv = nn.Linear(value_size, cell_dim * n_heads)
+        self.Wo = nn.Linear(cell_dim * n_heads, cell_dim * n_heads)
+        
+        self.scaled_dot_product_attention = ScaledDotProductAttention(self.cell_dim)
+        
+    def forward(self, query, key, value):
+        import ipdb; ipdb.set_trace()
+        qs = self.Wq(query).chunk(self.n_heads, dim=2)
+        ks = self.Wk(key).chunk(self.n_heads, dim=2)
+        vs = self.Wv(value).chunk(self.n_heads, dim=2)
+        
+        heads = list()
+        for q, k, v in zip(qs, ks, vs):
+            heads.append(self.scaled_dot_product_attention(q, k, v))
+        res = self.Wo(torch.cat(heads, dim=2))
+        return res
+
+class MLP(nn.Module):
+    
+    def __init__(self, input_size, hidden_size, output_size):
+        super(MLP, self).__init__()
+        self.network = nn.Sequential(nn.Linear(input_size, hidden_size), 
+                                     nn.ReLU(),
+                                     nn.Linear(hidden_size, output_size))
+    
+    def forward(self, input_):
+        return self.network(MLP)
+        
+def EncoderLayer(nn.Module):
+    
+    def __init__(self, input_size, n_heads):
+        assert input_size % n_heads == 0
+        self.multi_head_attention = MultiHeadAttention(n_heads, input_size // n_heads, input_size, input_size, input_size)
+        self.layer_norm_attention = nn.LayerNorm(input_size)
+        self.feed_forward = MLP(input_size, input_size * 4)
+        self.layer_norm_MLP = nn.LayerNorm(input_size)
+        
+    def forward(self, input_):
+        h1 = self.multi_head_attention(input_, input_, input_)
+        h2 = self.layer_norm_attention(h1 + input_)
+        h3 = self.feed_forward(h2)
+        h4 = self.layer_norm_MLP(h3 + h2)
+        return h4

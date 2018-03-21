@@ -87,6 +87,7 @@ class DataStreamBase(object):
         self.files = self.corpus.files
         
         self.batch_size = kwargs['batch_size']
+        self.batch_first = kwargs['transformer']
 
     def __len__(self):
         return sum(map(len, self.corpus.indice_bins))
@@ -125,7 +126,7 @@ class DataStreamBase(object):
                 input_enc.append(pad_sentence(inp_e, size_enc_padded, EOS=True))
                 
         # fill in data
-        batch = Batch()
+        batch = Batch(batch_first=self.batch_first)
         batch.add_entry('idx', idx, 'int64')
         batch.add_entry('input_enc', input_enc, 'int64')
         batch.add_entry('real_src_length', real_src_length, 'int64')

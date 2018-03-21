@@ -179,6 +179,7 @@ def parse_args():
     model_group.add_argument('--num_layers', '-nl', default=1, type=int, help='Number of layers', metavar='')
     model_group.add_argument('--src_vocab_size', '-svs', default=30000, type=int, help='Vocabulary size for source language', metavar='')
     model_group.add_argument('--tgt_vocab_size', '-tvs', default=15000, type=int, help='Vocabulary size for target language', metavar='')
+    model_group.add_argument('-Transformer', '-T', action='store_true', help='Use Transformer architecture')
 
     args = parser.parse_args()
     
