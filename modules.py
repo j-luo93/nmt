@@ -101,10 +101,13 @@ class ScaledDotProductAttention(nn.Module):
         super(ScaledDotProductAttention, self).__init__()
         self.cell_dim = cell_dim
         
-    def forward(self, query, key, value, mask=None): # corresponding to Q, K, and V in the original paper
+    def forward(self, query, key, value, mask=False): # corresponding to Q, K, and V in the original paper
         import ipdb; ipdb.set_trace()
         bs, sl, d = value.size()
         mm = query.matmul(key)
+        if mask:
+            import ipdb; ipdb.set_trace()
+            # TODO
         w = nn.functional.log_softmax(mm / math.sqrt(self.cell_dim), dim=2).exp()
         res = (w.view(bs, sl, sl, 1) * value.view(bs, 1, sl, d)).sum(dim=2) # bs x sl x d
         return res
@@ -123,7 +126,7 @@ class MultiHeadAttention(nn.Module):
         
         self.scaled_dot_product_attention = ScaledDotProductAttention(self.cell_dim)
         
-    def forward(self, query, key, value):
+    def forward(self, query, key, value, mask=False):
         import ipdb; ipdb.set_trace()
         qs = self.Wq(query).chunk(self.n_heads, dim=2)
         ks = self.Wk(key).chunk(self.n_heads, dim=2)
@@ -131,7 +134,7 @@ class MultiHeadAttention(nn.Module):
         
         heads = list()
         for q, k, v in zip(qs, ks, vs):
-            heads.append(self.scaled_dot_product_attention(q, k, v))
+            heads.append(self.scaled_dot_product_attention(q, k, v, mask=mask))
         res = self.Wo(torch.cat(heads, dim=2))
         return res
 
@@ -149,15 +152,53 @@ class MLP(nn.Module):
 def EncoderLayer(nn.Module):
     
     def __init__(self, input_size, n_heads):
+        super(EncoderLayer, self).__init__()
         assert input_size % n_heads == 0
-        self.multi_head_attention = MultiHeadAttention(n_heads, input_size // n_heads, input_size, input_size, input_size)
-        self.layer_norm_attention = nn.LayerNorm(input_size)
+        self.self_attention = MultiHeadAttention(n_heads, input_size // n_heads, input_size, input_size, input_size)
+        self.layer_norm_self_attention = nn.LayerNorm(input_size)
         self.feed_forward = MLP(input_size, input_size * 4)
         self.layer_norm_MLP = nn.LayerNorm(input_size)
         
     def forward(self, input_):
-        h1 = self.multi_head_attention(input_, input_, input_)
-        h2 = self.layer_norm_attention(h1 + input_)
+        h1 = self.self_attention(input_, input_, input_)
+        h2 = self.layer_norm_self_attention(h1 + input_)
         h3 = self.feed_forward(h2)
         h4 = self.layer_norm_MLP(h3 + h2)
         return h4
+        
+def DecoderLayer(nn.Module):
+    
+    def __init__(self, input_size, n_heads):
+        super(DecoderLayer, self).__init__()
+        assert input_size % n_heads == 0
+        self.self_attention = MultiHeadAttention(n_heads, input_size // n_heads, input_size, input_size, input_size)
+        self.layer_norm_self_attention = nn.LayerNorm(input_size)
+        self.attention = MultiHeadAttention(n_heads, input_size // n_heads, input_size, input_size, input_size)
+        self.layer_norm_attention = nn.LayerNorm(input_size)
+        self.feed_forward = MLP(input_size, input_size * 4)
+        self.layer_norm_MLP = nn.LayerNorm(input_size)
+        
+    def forward(self, input_, encoder_states):
+        if self.training:
+            h1 = self.self_attention(input_, input_, input_, mask=True)
+            h2 = self.layer_norm_self_attention(h1 + input_)
+            h3 = self.attention(h2, encoder_states, encoder_states)
+            h4 = self.layer_norm_attention(h3 + h2)
+            h5 = self.feed_forward(h4)
+            h6 = self.layer_norm_MLP(h5 + h4)
+        else:
+            # TODO 
+        return h6
+
+# since the depth for encoder and decode should be the same, we model it as a joint layer.    
+def JointLayer(nn.Module):
+    
+    def __init__(self, input_size, n_heads):
+        super(JointLayer, self).__init__()
+        self.encoder_layer = EncoderLayer(input_size, n_heads)
+        self.decoder_layer = DecoderLayer(input_size, n_heads)
+    
+    def forward(self, input_enc, input_dec):
+        encoder_states = self.encoder_layer(input_enc)
+        decoder_states = self.decoder_layer(input_dec, encoder_states)
+        return encoder_states, decoder_states
