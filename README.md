@@ -1,6 +1,9 @@
 ## Todo 
 -[x] clear up `utils`
--[ ] transformer codebase
+-[x] transformer codebase wo beam search
+-[ ] test
+-[ ] beam search
+-[ ] test
 -[ ] change `cell_dim` to `cell_size` or (`n_units`), to differ from `dim=?` argument
 -[ ] compare w/ pretrained wv and wo
 

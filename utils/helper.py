@@ -43,7 +43,7 @@ def get_zeros(sizes, training=True, tensor=False):
         h = V(h, volatile=volatile)
     return h
 
-def get_values(sizes, value): # TODO add training argument?
+def get_values(sizes, value): 
     h = get_zeros(sizes, tensor=True)
     h.fill_(value)
     return V(h)

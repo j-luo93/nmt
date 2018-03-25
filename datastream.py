@@ -46,8 +46,9 @@ def pad_sentence(sentence, length, EOS=False, SOS=False, reverse=False):
 
 class Batch(Table):
     
-    def __init__(self):
+    def __init__(self, batch_first=False):
         super(Batch, self).__init__()
+        self.batch_first = batch_first
 
     def __len__(self):
         return len(self.real_src_length)
@@ -58,7 +59,8 @@ class Batch(Table):
         super(Batch, self).add_entry(name, value, visible=True)
 
     def prepare(self):
-        self._reindex()
+        if not self.batch_first:
+            self._reindex()
         self._package()
     
     def _reindex(self):
@@ -87,7 +89,7 @@ class DataStreamBase(object):
         self.files = self.corpus.files
         
         self.batch_size = kwargs['batch_size']
-        self.batch_first = kwargs['transformer']
+        self.batch_first = kwargs['Transformer']
 
     def __len__(self):
         return sum(map(len, self.corpus.indice_bins))

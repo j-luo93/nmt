@@ -50,4 +50,4 @@ class Table(object):
         return self.__getitem__(name)
     
     def __len__(self):
-        self.length
+        return self.length

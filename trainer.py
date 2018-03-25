@@ -25,7 +25,8 @@ def create_optimizer(mod_or_params, lr, params=False):
 def translate_(translations, pred_ids, batch, vocab, src_tokens=None, dictionary=None, alignments=None):
     for idx, (i, ids) in enumerate(zip(batch.idx, pred_ids)): 
         assert i not in translations
-        translations[i] = id2token(ids, vocab, src_tokens=src_tokens[idx], dictionary=dictionary, alignments=alignments[idx])
+        alignment = None if alignments is None else alignments[idx]
+        translations[i] = id2token(ids, vocab, src_tokens=src_tokens[idx], dictionary=dictionary, alignments=alignment)
 
 def bleu_test(translations, data_set, pred_path, gold_path=None):
     assert set(translations.keys()) == set(range(len(data_set)))
@@ -146,10 +147,13 @@ class TrainerBase(object):
         accuracy = 0.0
         for batch in dev_set: 
             self.model.zero_grad()
-            preds, alignments, _ = self.model(batch) 
+            res = self.model(batch) 
+            preds = res.predictions
+            alignments = res.alignments
             # NOTE imp
             preds = preds.data.cpu().numpy() 
-            alignments = alignments.data.cpu().numpy() 
+            if alignments is not None:
+                alignments = alignments.data.cpu().numpy() 
             
             translate_(translations, preds, batch, vocab, src_tokens=batch.src_tokens, dictionary=dictionary, alignments=alignments)
         print('\n########################################')
@@ -184,7 +188,8 @@ class Trainer(TrainerBase):
                 self.tracker.start_timer()
                 self.model.train()
                 batch = train_set.get_next_batch()
-                _, _, loss = self.model(batch) 
+                res = self.model(batch) 
+                loss = res.loss
                 loss.backward()
                 
                 updates = {'loss': loss.data[0]}

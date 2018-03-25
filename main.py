@@ -18,6 +18,7 @@ import argparse
 import subprocess
 import utils
 from models import Seq2Seq, Searcher
+from Transformer import Transformer
 from trainer import bleu_test, translate_
 from datastream import DataStream, DataStreamRandom
 from trainer import Trainer
@@ -180,6 +181,7 @@ def parse_args():
     model_group.add_argument('--src_vocab_size', '-svs', default=30000, type=int, help='Vocabulary size for source language', metavar='')
     model_group.add_argument('--tgt_vocab_size', '-tvs', default=15000, type=int, help='Vocabulary size for target language', metavar='')
     model_group.add_argument('-Transformer', '-T', action='store_true', help='Use Transformer architecture')
+    model_group.add_argument('--num_heads', '-nh', default=8, type=int, help='Number of heads for mult-head attention', metavar='')
 
     args = parser.parse_args()
     
@@ -187,9 +189,9 @@ def parse_args():
         os.environ['USE_CUDA'] = '1'
 
     if args.DEBUG:
-        args.batch_size = 32
+        args.batch_size = 2
         args.max_size = 10000
-        args.cell_dim = 100
+        args.cell_dim = 6
         args.src_vocab_size = 500
         args.tgt_vocab_size = 500
         
@@ -226,7 +228,10 @@ if __name__ == '__main__':
     args.tgt_vocab_size = len(tgt_vocab)
     
     if args.mode == 'train':
-        model_mod = Seq2Seq
+        if args.Transformer:
+            model_mod = Transformer
+        else:
+            model_mod = Seq2Seq
     elif args.mode == 'test':
         model_mod = Searcher 
     else:
