@@ -44,28 +44,28 @@ class Transformer(nn.Module):
             pos_dec = self.position_encoder(get_variable(torch.arange(0, tl).long().expand_as(input_dec_sym)))
             input_enc = input_enc_emb + pos_enc
             input_dec = input_dec_emb + pos_dec
-            all_encoder_states = self.encoder(input_enc)
-            all_decoder_states = self.decoder(input_dec, all_encoder_states)
+            encoder_states = self.encoder(input_enc)
+            decoder_states = self.decoder(input_dec, encoder_states)
             
-            logits = self.projection(all_decoder_states[-1]) # take the output from the last decoder layer 
+            logits = self.projection(decoder_states) # take the output from the last decoder layer 
             targets = get_variable(batch.target)
             loss = self.output(logits, targets, mask=mask_tgt).sum() / len(batch)
             res = VD([('loss', loss)])
             return res
         else:
-            input_enc_sym = get_variable(batch.input_enc)
+            input_enc_sym = get_variable(batch.input_enc, volatile=True)
             input_enc_emb = self.src_emb(input_enc_sym)
-            pos_enc = self.position_encoder(get_variable(torch.arange(0, sl).long().expand_as(input_enc_sym)))
+            pos_enc = self.position_encoder(get_variable(torch.arange(0, sl).long().expand_as(input_enc_sym), volatile=True))
             input_enc = input_enc_emb + pos_enc
-            all_encoder_states = self.encoder(input_enc_emb)
+            encoder_states = self.encoder(input_enc_emb)
             tl = int(1.5 * input_enc.size(1))
-            pos_dec = self.position_encoder(get_variable(torch.arange(0, tl).long().view(1, tl).expand(bs, tl)))
-            input_dec_emb = self.tgt_emb(get_values([bs], SOS_ID).long())
+            pos_dec = self.position_encoder(get_variable(torch.arange(0, tl).long().view(1, tl).expand(bs, tl), volatile=True))
+            input_dec_emb = self.tgt_emb(get_values([bs], SOS_ID, volatile=True).long())
             predictions = list()
             for i in xrange(tl):
                 input_dec = (input_dec_emb + pos_dec[:, i]).unsqueeze(dim=1)
-                all_decoder_states = self.decoder(input_dec, all_encoder_states)
-                logits = self.projection(all_decoder_states[-1])
+                decoder_states = self.decoder(input_dec, encoder_states)
+                logits = self.projection(decoder_states)
                 pred = logits.max(dim=2)[1].view(bs)
                 predictions.append(pred)
                 input_dec_emb = self.tgt_emb(pred)

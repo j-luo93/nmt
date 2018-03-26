@@ -43,10 +43,10 @@ def get_zeros(sizes, training=True, tensor=False):
         h = V(h, volatile=volatile)
     return h
 
-def get_values(sizes, value): 
+def get_values(sizes, value, **kwargs): 
     h = get_zeros(sizes, tensor=True)
     h.fill_(value)
-    return V(h)
+    return V(h, **kwargs)
     
 def get_type(x):
     assert isinstance(x, V) or torch.is_tensor(x) or isinstance(x, LSTMState)

@@ -211,8 +211,7 @@ class EncoderStack(nn.Module):
         encoder_states = input_enc
         for layer in self.layers:
             encoder_states = layer(encoder_states)
-            res.append(encoder_states)
-        return res
+        return encoder_states
 
 class DecoderStack(nn.Module):
     
@@ -220,13 +219,12 @@ class DecoderStack(nn.Module):
         super(DecoderStack, self).__init__()
         self.layers = nn.ModuleList([DecoderLayer(input_size, n_heads) for _ in xrange(num_layers)])
         
-    def forward(self, input_dec, all_encoder_states):
+    def forward(self, input_dec, encoder_states):
         res = list()
         decoder_states = input_dec
-        for layer, encoder_states in zip(self.layers, all_encoder_states):
+        for layer in self.layers:
             decoder_states = layer(decoder_states, encoder_states)
-            res.append(decoder_states)
-        return res
+        return decoder_states
 
 class LayerNorm(nn.Module):
 
