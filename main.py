@@ -152,12 +152,12 @@ def parse_args():
     parser.add_argument('data_dir', type=str, help='Data directory')
     parser.add_argument('-DEBUG', action='store_true', help='Debug mode')
     parser.add_argument('--seed', default=1234, type=int, help='Random seed')
-    parser.add_argument('-random', '-r', action='store_true', help='use random random seed')
-    parser.add_argument('-cuda', '-c', action='store_true', help='Use cuda')
     parser.add_argument('--beam_width', '-bw', default=1, type=int, help='Beam width', metavar='')
     parser.add_argument('-replace_unk', '-ru', action='store_true', help='Replace unknown tokens')
     # arguments for training
     train_group = parser.add_argument_group('Train')
+    train_group.add_argument('-random', '-r', action='store_true', help='use random random seed')
+    train_group.add_argument('-cuda', '-c', action='store_true', help='Use cuda')
     train_group.add_argument('--num_epochs', '-ne', default=50, type=int, help='Number of epochs', metavar='')
     train_group.add_argument('--batch_size', '-bs', default=64, type=int, help='Batch size', metavar='')
     train_group.add_argument('--max_length', '-ml', default=100, type=int, help='Maximum sequence length', metavar='')
@@ -179,6 +179,8 @@ def parse_args():
     model_group.add_argument('--num_layers', '-nl', default=1, type=int, help='Number of layers', metavar='')
     model_group.add_argument('--src_vocab_size', '-svs', default=30000, type=int, help='Vocabulary size for source language', metavar='')
     model_group.add_argument('--tgt_vocab_size', '-tvs', default=15000, type=int, help='Vocabulary size for target language', metavar='')
+    model_group.add_argument('-MoE', action='store_true', help='Use MoE')
+    model_group.add_argument('--num_experts', '-NE', default=10, type=int, help='Number of experts for MoE', metavar='')
 
     args = parser.parse_args()
     

@@ -80,3 +80,21 @@ class GlobalAttention(nn.Module):
         cat = torch.cat([context, h_t], 1)
         h_tilde = nn.functional.tanh(self.hidden(self.drop(cat)))
         return h_tilde, alignment.t().contiguous() # NOTE alignment now bs x sl, used for loss module
+        
+class MoEDecoder(nn.Module):
+    
+    def __init__(self, input_size, n_experts, tgt_vocab_size):
+        super(MoEDecoder, self).__init__()
+        
+        self.n_experts = n_experts
+        self.tgt_vocab_size = tgt_vocab_size
+        # gating
+        self.Wg = nn.Parameter(torch.Tensor(input_size, n_experts)) 
+        # experts
+        self.projection = nn.Linear(input_size, n_experts * tgt_vocab_size)
+        
+    def forward(self, input_):
+        bs = input_.size(0)
+        expert_probs = nn.functional.log_softmax(input_.mm(self.Wg), dim=1).exp()
+        all_logits = self.projection(input_).view(bs, self.n_experts, self.tgt_vocab_size)
+        return expert_probs, all_logits

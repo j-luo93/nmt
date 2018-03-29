@@ -1,3 +1,10 @@
+## TODO
+-[x] soft MoE w/ separate decoder
+-[ ] sampled softmax
+-[ ] pwv
+-[ ] gumble
+-[ ] control unit
+
 ## Initial Setup
 
     conda create -n py2 python=2 pip   # create an environment

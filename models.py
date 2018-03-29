@@ -8,7 +8,7 @@ import torch.nn as nn
 from utils.helper import get_variable, get_zeros, expand, get_tensor, where, get_values
 from utils.vocab import PAD_ID, SOS_ID, EOS_ID
 from utils.LSTMState import LSTMState
-from modules import MultiLayerRNNCell, GlobalAttention
+from modules import MultiLayerRNNCell, GlobalAttention, MoEDecoder
 from models_utils import Record, NEG_INF, cat, AttentionHelper, Beam
 
 class BaseModel(nn.Module):
@@ -55,6 +55,8 @@ class Seq2Seq(BaseModel):
         self.num_layers = kwargs['num_layers']
         self.src_vocab_size = kwargs['src_vocab_size']
         self.tgt_vocab_size = kwargs['tgt_vocab_size']
+        self.MoE = kwargs['MoE']
+        self.num_experts = kwargs['num_experts']
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
         self.encoder = nn.LSTM(self.cell_dim, self.cell_dim, 
@@ -63,7 +65,10 @@ class Seq2Seq(BaseModel):
         self.attention = GlobalAttention(self.cell_dim, kwargs['dropout'])
         self.decoder = MultiLayerRNNCell(self.num_layers, 2 * self.cell_dim, self.cell_dim, module='LSTM', dropout=kwargs['dropout']) # bidirectional 
 
-        self.proj = nn.Linear(self.cell_dim, self.tgt_vocab_size)
+        if self.MoE:
+            self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size)
+        else:
+            self.proj = nn.Linear(self.cell_dim, self.tgt_vocab_size)
         self.drop = nn.Dropout(kwargs['dropout'])
 
     def search(self, batch, **kwargs):
@@ -109,12 +114,20 @@ class Seq2Seq(BaseModel):
             h_t = state.get_output()
 
             att, alignment = att_helper(annotations, h_t, mask_src)
-            logits = self.proj(self.drop(att))
-            log_probs = nn.functional.log_softmax(logits) # bs x tvs
-            preds.append(log_probs.max(dim=1)[1])
             alignments.append(alignment.max(dim=1)[1])
-            if compute_loss:
-                losses.append(log_probs.gather(1, target[j].view(-1, 1)).view(-1))
+            if self.MoE:
+                expert_probs, all_logits = self.proj(self.drop(att))
+                all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
+                preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
+                if compute_loss:
+                    all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
+                    losses.append((expert_probs * all_losses).sum(dim=1))
+            else:
+                logits = self.proj(self.drop(att))
+                log_probs = nn.functional.log_softmax(logits) # bs x tvs
+                preds.append(log_probs.max(dim=1)[1])
+                if compute_loss:
+                    losses.append(log_probs.gather(1, target[j].view(-1, 1)).view(-1))
         
         preds = torch.stack(preds, 1) # bs x sl
         alignments = torch.stack(alignments, 1) # bs x sl
