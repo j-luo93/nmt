@@ -62,11 +62,13 @@ class Transformer(nn.Module):
             pos_dec = self.position_encoder(get_variable(torch.arange(0, tl).long().view(1, tl).expand(bs, tl), volatile=True))
             input_dec_emb = self.tgt_emb(get_values([bs], SOS_ID, volatile=True).long())
             predictions = list()
+            dec_emb_list = list()
             for i in xrange(tl):
                 input_dec = (input_dec_emb + pos_dec[:, i]).unsqueeze(dim=1)
-                decoder_states = self.decoder(input_dec, encoder_states)
+                dec_emb_list.append(input_dec)
+                decoder_states = self.decoder(torch.cat(dec_emb_list, dim=1), encoder_states)[:, -1, :]
                 logits = self.projection(decoder_states)
-                pred = logits.max(dim=2)[1].view(bs)
+                pred = logits.max(dim=1)[1]
                 predictions.append(pred)
                 input_dec_emb = self.tgt_emb(pred)
             predictions = torch.stack(predictions, dim=1)

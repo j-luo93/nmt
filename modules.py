@@ -120,7 +120,7 @@ class ScaledDotProductAttention(nn.Module):
         if use_mask:
             max_lengths = get_variable(torch.arange(0, ql).long().view(1, ql, 1))
             indices = get_variable(torch.arange(0, kl).long().view(1, 1, kl).expand(bs, ql, kl))
-            mask = (indices <= max_lengths).float()
+            mask = (indices > max_lengths).float()
             mm = mm + mask * NEG_INF
         w = nn.functional.log_softmax(mm / math.sqrt(self.cell_dim), dim=2).exp()
         res = (w.contiguous().view(bs, ql, kl, 1) * value.contiguous().view(bs, 1, kl, d)).sum(dim=2) # bs x ql x d
@@ -226,6 +226,9 @@ class DecoderStack(nn.Module):
             decoder_states = layer(decoder_states, encoder_states)
         return decoder_states
 
+'''
+From jadore
+'''
 class LayerNorm(nn.Module):
 
     def __init__(self, d_hid, eps=1e-3):
@@ -246,119 +249,3 @@ class LayerNorm(nn.Module):
 
         return ln_out
 
-# '''
-# Copied from pytorch github
-# '''
-# def batch_norm(input, running_mean, running_var, weight=None, bias=None,
-#                training=False, momentum=0.1, eps=1e-5):
-#     if training:
-#         size = list(input.size())
-#         if reduce(mul, size[2:], size[0]) == 1:
-#             raise ValueError('Expected more than 1 value per channel when training, got input size {}'.format(size))
-#     f = torch._C._functions.BatchNorm(running_mean, running_var, training, momentum, eps, torch.backends.cudnn.enabled)
-#     return f(input, weight, bias)
-# 
-# def layer_norm(input, normalized_shape, running_mean=None, running_var=None,
-#                weight=None, bias=None, use_input_stats=True,
-#                momentum=0.1, eps=1e-5):
-#     if not use_input_stats and (running_mean is None or running_var is None):
-#         raise ValueError('Expected running_mean and running_var to be not None when use_input_stats=False')
-# 
-#     if weight is not None and weight.size() != normalized_shape:
-#         raise ValueError('Expected weight to be of same shape as '
-#                          'normalized_shape, but got {} weight and '
-#                          'normalized_shape={}'.format(weight.size(), normalized_shape))
-# 
-#     if bias is not None and bias.size() != normalized_shape:
-#         raise ValueError('Expected bias to be of same shape as '
-#                          'normalized_shape, but got {} bias and '
-#                          'normalized_shape={}'.format(bias.size(), normalized_shape))
-# 
-#     normalized_ndim = len(normalized_shape)
-#     input_shape = input.size()
-# 
-#     if input_shape[-normalized_ndim:] != torch.Size(normalized_shape):
-#         raise ValueError('Expected input with shape [*, {}], but got {} input'
-#                          .format(', '.join(normalized_shape), list(input_shape)))
-# 
-#     n = reduce(mul, input_shape[:-normalized_ndim], 1)
-# 
-#     # Repeat stored stats if necessary
-#     if running_mean is not None:
-#         running_mean_orig = running_mean
-#         running_mean = running_mean_orig.repeat(n)
-#     if running_var is not None:
-#         running_var_orig = running_var
-#         running_var = running_var_orig.repeat(n)
-# 
-#     # Apply layer norm
-#     input_reshaped = input.contiguous().view(1, n, -1)
-# 
-#     import ipdb; ipdb.set_trace()
-#     out = nn.functional.batch_norm(
-#         input_reshaped, running_mean, running_var, None, None,
-#         use_input_stats, momentum, eps)
-# 
-#     # Copy back
-#     if running_mean is not None:
-#         running_mean_orig.fill_(running_mean.mean())
-#     if running_var is not None:
-#         running_var_orig.fill_(running_var.mean())
-# 
-#     out = out.view(*input_shape)
-# 
-#     if weight is not None and bias is not None:
-#         return torch.addcmul(bias, 1, out, weight)
-#     elif weight is not None:
-#         return torch.mul(out, weight)
-#     elif bias is not None:
-#         return torch.add(out, bias)
-#     else:
-#         return out
-# 
-# class LayerNorm(nn.Module):
-# 
-#     def __init__(self, normalized_shape, eps=1e-5, momentum=0.1,
-#                  elementwise_affine=True, track_running_stats=False):
-#         super(LayerNorm, self).__init__()
-#         if isinstance(normalized_shape, numbers.Integral):
-#             normalized_shape = (normalized_shape,)
-#         self.normalized_shape = torch.Size(normalized_shape)
-#         self.eps = eps
-#         self.momentum = momentum
-#         self.elementwise_affine = elementwise_affine
-#         self.track_running_stats = track_running_stats
-#         if self.elementwise_affine:
-#             self.weight = nn.Parameter(torch.Tensor(*normalized_shape))
-#             self.bias = nn.Parameter(torch.Tensor(*normalized_shape))
-#         else:
-#             self.register_parameter('weight', None)
-#             self.register_parameter('bias', None)
-#         if self.track_running_stats:
-#             self.register_buffer('running_mean', torch.zeros(1))
-#             self.register_buffer('running_var', torch.ones(1))
-#         else:
-#             self.register_parameter('running_mean', None)
-#             self.register_parameter('running_var', None)
-#         self.reset_parameters()
-# 
-#     def reset_parameters(self):
-#         if self.track_running_stats:
-#             self.running_mean.zero_()
-#             self.running_var.fill_(1)
-#         if self.elementwise_affine:
-#             self.weight.data.fill_(1)
-#             self.bias.data.zero_()
-# 
-#     def forward(self, input):
-#         return layer_norm(
-#             input, self.normalized_shape, self.running_mean, self.running_var,
-#             self.weight, self.bias, self.training or not self.track_running_stats,
-#             self.momentum, self.eps)
-# 
-#     def __repr__(self):
-#         return ('{name}({normalized_shape}, eps={eps}, momentum={momentum},'
-#                 ' elementwise_affine={elementwise_affine},'
-#                 ' track_running_stats={track_running_stats})'
-#                 .format(name=self.__class__.__name__, **self.__dict__))
-# 

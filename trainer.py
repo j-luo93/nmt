@@ -18,6 +18,17 @@ from utils.helper import get_variable
 from utils.vocab import EOS_ID, id2token
 
 def create_optimizer(mod_or_params, lr, params=False):
+    from optim import ScheduledOptim
+
+    optimizer = ScheduledOptim(
+        optim.Adam(
+            mod_or_params.parameters(),
+            betas=(0.9, 0.98), eps=1e-09),
+        512, 4000)
+
+    return optimizer
+
+
     params = mod_or_params.parameters() if not params else mod_or_params
     return optim.Adam(params, lr=lr)
 

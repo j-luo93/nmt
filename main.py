@@ -103,8 +103,6 @@ def test(args):
     
     dictionary = train_corpus.dictionary 
 
-    test_src_data_path = '%s/test.%s' %(args.data_dir, args.src) 
-    #test_tgt_data_path = '%s/test.%s' %(args.data_dir, args.tgt)
     if args.test_path is not None:
         test_src_data_path = '%s.%s' %(args.test_path, args.src) 
         #test_tgt_data_path = '%s.%s' %(args.test_path, args.tgt)
