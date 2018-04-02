@@ -8,6 +8,7 @@ import torch.nn as nn
 from utils.helper import get_variable, get_zeros, expand, get_tensor, where, get_values
 from utils.vocab import PAD_ID, SOS_ID, EOS_ID
 from utils.LSTMState import LSTMState
+from utils.variable_dict import VariableDict as VD
 from modules import MultiLayerRNNCell, GlobalAttention, MoEDecoder
 from models_utils import Record, NEG_INF, cat, AttentionHelper, Beam
 
@@ -56,6 +57,7 @@ class Seq2Seq(BaseModel):
         self.src_vocab_size = kwargs['src_vocab_size']
         self.tgt_vocab_size = kwargs['tgt_vocab_size']
         self.MoE = kwargs['MoE']
+        self.diversify = kwargs['diversify']
         self.num_experts = kwargs['num_experts']
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
@@ -104,6 +106,7 @@ class Seq2Seq(BaseModel):
         preds = list()
         alignments = list()
         losses = list()
+        reg_loss = list()
         for j in xrange(tl):
             if j > 0 and not teacher_forced:
                 cat = torch.cat([self.tgt_emb(preds[-1]), att], 1)
@@ -116,13 +119,14 @@ class Seq2Seq(BaseModel):
             att, alignment = att_helper(annotations, h_t, mask_src)
             alignments.append(alignment.max(dim=1)[1])
             if self.MoE:
-                import ipdb; ipdb.set_trace()
                 expert_probs, all_logits = self.proj(self.drop(att))
                 all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
                 preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
                 if compute_loss:
                     all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
                     losses.append((expert_probs * all_losses).sum(dim=1))
+                    if self.diversify:
+                        reg_loss.append(expert_probs)
             else:
                 logits = self.proj(self.drop(att))
                 log_probs = nn.functional.log_softmax(logits) # bs x tvs
@@ -134,8 +138,16 @@ class Seq2Seq(BaseModel):
         alignments = torch.stack(alignments, 1) # bs x sl
         if compute_loss:
             losses = -(torch.stack(losses, 0) * mask_tgt).sum() / len(batch)
+            if self.diversify:
+                expert_probs_masked = torch.stack(reg_loss, 0) * mask_tgt.unsqueeze(dim=2)
+                expert_probs_masked_mean = expert_probs_masked.sum(dim=0).sum(dim=0) / mask_tgt.sum() # ne
+                reg_loss = -(((expert_probs_masked - expert_probs_masked_mean) ** 2) * mask_tgt.unsqueeze(dim=2)).sum() / mask_tgt.sum() / self.num_experts
         
-        return preds, alignments, losses
+        res = VD([('predictions', preds), ('alignments', alignments), ('losses', losses)])
+        if self.diversify:
+            res.append(('reg_loss', reg_loss))
+        return res
+        #return preds, alignments, losses
             
 class Searcher(Seq2Seq):
     

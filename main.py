@@ -183,6 +183,7 @@ def parse_args():
     model_group.add_argument('--tgt_vocab_size', '-tvs', default=15000, type=int, help='Vocabulary size for target language', metavar='')
     model_group.add_argument('-MoE', action='store_true', help='Use MoE')
     model_group.add_argument('--num_experts', '-NE', default=10, type=int, help='Number of experts for MoE', metavar='')
+    model_group.add_argument('-diversify', '-D', action='store_true', help='Use regularization loss to diversify gating outputs for MoE')
 
     args = parser.parse_args()
     

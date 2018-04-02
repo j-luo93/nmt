@@ -57,6 +57,7 @@ class Tracker(object):
         self.last_dev_loss = np.inf
 
         self.total_loss = 0.0
+        self.total_reg_loss = 0.0
         self.total_norm = 0.0
         self.total_time = 0.0
         self.total_words = 0.0
@@ -100,6 +101,8 @@ class Tracker(object):
     def update(self, batch, updates, quiet=False):
         self.total_loss += updates['loss'] * len(batch)
         self.total_norm += updates['norm']
+        if 'reg_loss' in updates:
+            self.total_reg_loss += updates['reg_loss']
         
         self.total_words += batch.total_words
         self.step += 1
@@ -112,6 +115,9 @@ class Tracker(object):
     def check(self):
         loss = self.total_loss / self.total_words
         norm = self.total_norm / self.cf
+        if self.total_reg_loss < 0.0:
+            self.total_reg_loss /= self.cf
+            print('reg loss %.4f' %self.total_reg_loss)
 
         total_time = self.total_time / self.cf
         ppx = math.exp(loss) if loss < 300 else np.inf
@@ -119,6 +125,7 @@ class Tracker(object):
               %(self.name, self.step, total_time, loss, norm), file=sys.stderr)
         
         self.total_loss = 0.0
+        self.total_reg_loss = 0.0
         self.total_norm = 0.0
         self.total_time = 0.0
         self.total_words = 0.0     
@@ -146,7 +153,9 @@ class TrainerBase(object):
         accuracy = 0.0
         for batch in dev_set: 
             self.model.zero_grad()
-            preds, alignments, _ = self.model(batch) 
+            res = self.model(batch) 
+            preds = res.predictions
+            alignments = res.alignments
             # NOTE imp
             preds = preds.data.cpu().numpy() 
             alignments = alignments.data.cpu().numpy() 
@@ -184,11 +193,16 @@ class Trainer(TrainerBase):
                 self.tracker.start_timer()
                 self.model.train()
                 batch = train_set.get_next_batch()
-                _, _, loss = self.model(batch) 
+                res = self.model(batch) 
+                loss = res.losses # TODO rename this
+                if self.model.diversify:
+                    loss = loss + res.reg_loss * 50.0
                 loss.backward()
                 
-                updates = {'loss': loss.data[0]}
+                updates = {'loss': res.losses.data[0]}
                 updates['norm'] = nn.utils.clip_grad_norm(self.model.parameters(), 5.0)
+                if self.model.diversify:
+                    updates['reg_loss'] = res.reg_loss.data[0]
                 
                 self.optimizer.step()
                 
