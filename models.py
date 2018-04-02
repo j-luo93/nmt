@@ -23,7 +23,7 @@ class BaseModel(nn.Module):
         mask_src = (input_enc != PAD_ID).float()
         sl, bs = input_enc.size()
         inp_enc = self.src_emb(input_enc)
-        inp_enc = self.drop(inp_enc) # NOTE dropout
+        #inp_enc = self.drop(inp_enc) # NOTE dropout
         inp_packed = nn.utils.rnn.pack_padded_sequence(inp_enc, rsl)
         h = get_zeros([2 * self.num_layers, bs, self.cell_dim], training=self.training) # NOTE bidirectional, therefore 2
         c = get_zeros([2 * self.num_layers, bs, self.cell_dim], training=self.training)
@@ -109,13 +109,14 @@ class Seq2Seq(BaseModel):
                 cat = torch.cat([self.tgt_emb(preds[-1]), att], 1)
             else:
                 cat = torch.cat([input_dec[j], att], 1)
-            cat = self.drop(cat) 
+            #cat = self.drop(cat) 
             state = self.decoder(cat, state)
             h_t = state.get_output()
 
             att, alignment = att_helper(annotations, h_t, mask_src)
             alignments.append(alignment.max(dim=1)[1])
             if self.MoE:
+                import ipdb; ipdb.set_trace()
                 expert_probs, all_logits = self.proj(self.drop(att))
                 all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
                 preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])

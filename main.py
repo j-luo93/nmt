@@ -3,7 +3,7 @@ from __future__ import print_function, division
 from datetime import datetime
 import pprint
 import os
-import cPickle
+import codecs
 import sys
 
 import time
@@ -154,6 +154,7 @@ def parse_args():
     parser.add_argument('--seed', default=1234, type=int, help='Random seed')
     parser.add_argument('--beam_width', '-bw', default=1, type=int, help='Beam width', metavar='')
     parser.add_argument('-replace_unk', '-ru', action='store_true', help='Replace unknown tokens')
+    parser.add_argument('--threshold', '-T', default=5, type=int, help='Frequency threhold for constructing vocabularies', metavar='')
     # arguments for training
     train_group = parser.add_argument_group('Train')
     train_group.add_argument('-random', '-r', action='store_true', help='use random random seed')
@@ -170,6 +171,7 @@ def parse_args():
     train_group.add_argument('--src', '-s', default='de', type=str, help='Source language', metavar='')
     train_group.add_argument('--tgt', '-t', default='en', type=str, help='Target language', metavar='')
     train_group.add_argument('--model_path', '-mp', type=str, help='Path to trained model', metavar='')
+    train_group.add_argument('--pretrained_word_vectors', '-pwv', action='store_true', help='Use pretrained word vectors')
     # arguments for testing
     test_group = parser.add_argument_group('Test')
     test_group.add_argument('--test_path', '-tp', help='test path', metavar='')
@@ -194,7 +196,7 @@ def parse_args():
         args.src_vocab_size = 500
         args.tgt_vocab_size = 500
         
-    assert args.mode in ['train', 'test'], args.mode
+    assert args.mode in ['train', 'test', 'inspect'], args.mode
     
     # set up training directory and temporary files
     now = datetime.now()
@@ -218,15 +220,15 @@ if __name__ == '__main__':
     
     src_vocab_path = '%s/vocab.%s' %(args.data_dir, args.src)
     tgt_vocab_path = '%s/vocab.%s' %(args.data_dir, args.tgt)
-    src_vocab = utils.vocab.Vocab(src_vocab_path, 0, threshold=2)
-    tgt_vocab = utils.vocab.Vocab(tgt_vocab_path, args.tgt_vocab_size, threshold=2, replace_unk=args.replace_unk)
+    src_vocab = utils.vocab.Vocab(src_vocab_path, 0, threshold=args.threshold)
+    tgt_vocab = utils.vocab.Vocab(tgt_vocab_path, args.tgt_vocab_size, threshold=args.threshold, replace_unk=args.replace_unk)
     vocabs = {'src': src_vocab, 'tgt': tgt_vocab}
     
     # change vocab size after thresholdding
     args.src_vocab_size = len(src_vocab)
     args.tgt_vocab_size = len(tgt_vocab)
     
-    if args.mode == 'train':
+    if args.mode in ['train', 'inspect']:
         model_mod = Seq2Seq
     elif args.mode == 'test':
         model_mod = Searcher 
@@ -234,9 +236,20 @@ if __name__ == '__main__':
         raise
     model = model_mod(**vars(args))
     init_params(model)
+
+    if args.pretrained_word_vectors:
+        with codecs.open(args.data_dir + '/' + 'train.%s.wv' %args.tgt, 'r', 'utf8') as fin:
+            for line in fin:
+                segs = line.split()
+                word = segs[0]
+                #import ipdb; ipdb.set_trace()
+                if word in vocabs['tgt']:
+                    i = vocabs['tgt'][word]
+                    vector = np.asarray(map(float, segs[1:]))
+                    model.tgt_emb.weight[i].data = torch.from_numpy(vector)
         
     # load trained model    
-    if args.mode == 'test':
+    if args.mode in ['test', 'inspect']:
         load_params(args.model_path + '/params.best', model)
 
     if args.cuda:
@@ -252,7 +265,7 @@ if __name__ == '__main__':
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
     torch.set_printoptions(precision=4, threshold=50)
-    if args.mode == 'train':
+    if args.mode in ['train', 'inspect']:
         train(args)
     elif args.mode == 'test':
         test(args)
