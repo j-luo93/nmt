@@ -1,7 +1,8 @@
 ## TODO
 -[x] soft MoE w/ separate decoder
--[ ] sampled softmax
--[ ] pwv
+-[x] sampled softmax
+-[ ] sampled softmax w/ MoE
+-[x] pwv
 -[ ] gumble
 -[ ] control unit
 

@@ -11,6 +11,7 @@ from utils.LSTMState import LSTMState
 from utils.variable_dict import VariableDict as VD
 from modules import MultiLayerRNNCell, GlobalAttention, MoEDecoder
 from models_utils import Record, NEG_INF, cat, AttentionHelper, Beam
+from sampled_softmax import SampledSoftmax
 
 class BaseModel(nn.Module):
         
@@ -59,6 +60,8 @@ class Seq2Seq(BaseModel):
         self.MoE = kwargs['MoE']
         self.diversify = kwargs['diversify']
         self.num_experts = kwargs['num_experts']
+        self.sampled_softmax = kwargs['sampled_softmax']
+        self.num_samples = kwargs['num_samples']
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
         self.encoder = nn.LSTM(self.cell_dim, self.cell_dim, 
@@ -70,7 +73,10 @@ class Seq2Seq(BaseModel):
         if self.MoE:
             self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size)
         else:
-            self.proj = nn.Linear(self.cell_dim, self.tgt_vocab_size)
+            if self.sampled_softmax:
+                self.proj = SampledSoftmax(self.tgt_vocab_size, self.num_samples, self.cell_dim)
+            else:
+                self.proj = nn.Linear(self.cell_dim, self.tgt_vocab_size)
         self.drop = nn.Dropout(kwargs['dropout'])
 
     def search(self, batch, **kwargs):
@@ -128,13 +134,27 @@ class Seq2Seq(BaseModel):
                     if self.diversify:
                         reg_loss.append(expert_probs)
             else:
-                logits = self.proj(self.drop(att))
+                # get logits and log_probs
+                if self.sampled_softmax:
+                    labels = target[j] if self.training else None
+                    logits = self.proj(self.drop(att), labels)
+                else:
+                    logits = self.proj(self.drop(att))
                 log_probs = nn.functional.log_softmax(logits) # bs x tvs
-                preds.append(log_probs.max(dim=1)[1])
+                
+                # only retrieve predictions during testing/validation
+                if not self.training:
+                    preds.append(log_probs.max(dim=1)[1])
+                
+                # get loss
                 if compute_loss:
-                    losses.append(log_probs.gather(1, target[j].view(-1, 1)).view(-1))
+                    if self.sampled_softmax:
+                        losses.append(log_probs[:, 0])
+                    else:
+                        losses.append(log_probs.gather(1, target[j].view(-1, 1)).view(-1))
         
-        preds = torch.stack(preds, 1) # bs x sl
+        if not self.training:
+            preds = torch.stack(preds, 1) # bs x sl
         alignments = torch.stack(alignments, 1) # bs x sl
         if compute_loss:
             losses = -(torch.stack(losses, 0) * mask_tgt).sum() / len(batch)
@@ -143,9 +163,11 @@ class Seq2Seq(BaseModel):
                 expert_probs_masked_mean = expert_probs_masked.sum(dim=0).sum(dim=0) / mask_tgt.sum() # ne
                 reg_loss = -(((expert_probs_masked - expert_probs_masked_mean) ** 2) * mask_tgt.unsqueeze(dim=2)).sum() / mask_tgt.sum() / self.num_experts
         
-        res = VD([('predictions', preds), ('alignments', alignments), ('losses', losses)])
+        res = VD([('alignments', alignments), ('losses', losses)])
         if self.diversify:
             res.append(('reg_loss', reg_loss))
+        if not self.training:
+            res.append(('predictions', preds))
         return res
         #return preds, alignments, losses
             

@@ -172,6 +172,8 @@ def parse_args():
     train_group.add_argument('--tgt', '-t', default='en', type=str, help='Target language', metavar='')
     train_group.add_argument('--model_path', '-mp', type=str, help='Path to trained model', metavar='')
     train_group.add_argument('--pretrained_word_vectors', '-pwv', action='store_true', help='Use pretrained word vectors')
+    train_group.add_argument('--sampled_softmax', '-ss', action='store_true', help='Use sampled softmax')
+    train_group.add_argument('--num_samples', '-ns', default=512, type=int, help='Number of samples to use for sampled softmax')
     # arguments for testing
     test_group = parser.add_argument_group('Test')
     test_group.add_argument('--test_path', '-tp', help='test path', metavar='')
