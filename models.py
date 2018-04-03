@@ -9,9 +9,8 @@ from utils.helper import get_variable, get_zeros, expand, get_tensor, where, get
 from utils.vocab import PAD_ID, SOS_ID, EOS_ID
 from utils.LSTMState import LSTMState
 from utils.variable_dict import VariableDict as VD
-from modules import MultiLayerRNNCell, GlobalAttention, MoEDecoder
+from modules import MultiLayerRNNCell, GlobalAttention, MoEDecoder, SampledSoftmax
 from models_utils import Record, NEG_INF, cat, AttentionHelper, Beam
-from sampled_softmax import SampledSoftmax
 
 class BaseModel(nn.Module):
         
@@ -71,7 +70,7 @@ class Seq2Seq(BaseModel):
         self.decoder = MultiLayerRNNCell(self.num_layers, 2 * self.cell_dim, self.cell_dim, module='LSTM', dropout=kwargs['dropout']) # bidirectional 
 
         if self.MoE:
-            self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size)
+            self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size, sampled_softmax=self.sampled_softmax, n_samples=self.num_samples)
         else:
             if self.sampled_softmax:
                 self.proj = SampledSoftmax(self.tgt_vocab_size, self.num_samples, self.cell_dim)
@@ -125,11 +124,19 @@ class Seq2Seq(BaseModel):
             att, alignment = att_helper(annotations, h_t, mask_src)
             alignments.append(alignment.max(dim=1)[1])
             if self.MoE:
-                expert_probs, all_logits = self.proj(self.drop(att))
+                if self.sampled_softmax:
+                    labels = target[j] if self.training else None
+                    expert_probs, all_logits = self.proj(self.drop(att), labels=labels)
+                else:
+                    expert_probs, all_logits = self.proj(self.drop(att))
                 all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
-                preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
+                if not self.training:
+                    preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
                 if compute_loss:
-                    all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
+                    if self.sampled_softmax:
+                        all_losses = all_log_probs[:, 0, :] # bs x ne
+                    else:
+                        all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
                     losses.append((expert_probs * all_losses).sum(dim=1))
                     if self.diversify:
                         reg_loss.append(expert_probs)
@@ -137,7 +144,7 @@ class Seq2Seq(BaseModel):
                 # get logits and log_probs
                 if self.sampled_softmax:
                     labels = target[j] if self.training else None
-                    logits = self.proj(self.drop(att), labels)
+                    logits = self.proj(self.drop(att), labels=labels)
                 else:
                     logits = self.proj(self.drop(att))
                 log_probs = nn.functional.log_softmax(logits) # bs x tvs
