@@ -191,6 +191,6 @@ class SampledSoftmax(nn.Module):
 
     def full(self, inputs):
         if self.shared_by_experts > 0: 
-            return self.params(inputs).view(-1, self.ntokens, self.shared_by_experts).transpose(1, 2)
+            return self.params(inputs).view(-1, self.ntokens, self.shared_by_experts)
         else:
             return self.params(inputs)

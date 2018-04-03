@@ -127,17 +127,23 @@ class Seq2Seq(BaseModel):
                 if self.sampled_softmax:
                     labels = target[j] if self.training else None
                     expert_probs, all_logits = self.proj(self.drop(att), labels=labels)
+                    all_log_probs = nn.functional.log_softmax(all_logits, dim=1) # bs x tvs x ne
                 else:
                     expert_probs, all_logits = self.proj(self.drop(att))
-                all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
+                    all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
                 if not self.training:
-                    preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
+                    if self.sampled_softmax:
+                        preds.append((all_log_probs.exp() * expert_probs.view(bs, 1, self.num_experts)).sum(dim=2).max(dim=1)[1])
+                    else:
+                        preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
+
                 if compute_loss:
                     if self.sampled_softmax:
                         all_losses = all_log_probs[:, 0, :] # bs x ne
+                        losses.append((expert_probs * all_losses).sum(dim=1))
                     else:
                         all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
-                    losses.append((expert_probs * all_losses).sum(dim=1))
+                        losses.append((expert_probs * all_losses).sum(dim=1))
                     if self.diversify:
                         reg_loss.append(expert_probs)
             else:

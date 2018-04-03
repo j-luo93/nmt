@@ -5,6 +5,7 @@
 -[x] pwv
 -[ ] gumble
 -[ ] control unit
+-[ ] MoE/SS codebase rewrite
 
 ## Initial Setup
 
