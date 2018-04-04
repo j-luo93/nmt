@@ -174,6 +174,8 @@ def parse_args():
     train_group.add_argument('--pretrained_word_vectors', '-pwv', action='store_true', help='Use pretrained word vectors')
     train_group.add_argument('--sampled_softmax', '-ss', action='store_true', help='Use sampled softmax')
     train_group.add_argument('--num_samples', '-ns', default=512, type=int, help='Number of samples to use for sampled softmax')
+    train_group.add_argument('-gumble', '-g', action='store_true', help='Use gumble softmax for MoE gating')
+    train_group.add_argument('-straight_through', '-st', action='store_true', help='Use ST gumble softmax for MoE gating')
     # arguments for testing
     test_group = parser.add_argument_group('Test')
     test_group.add_argument('--test_path', '-tp', help='test path', metavar='')

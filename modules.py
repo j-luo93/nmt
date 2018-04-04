@@ -86,13 +86,19 @@ class GlobalAttention(nn.Module):
         
 class MoEDecoder(nn.Module):
     
-    def __init__(self, input_size, n_experts, tgt_vocab_size, sampled_softmax=False, n_samples=None):
+    def __init__(self, input_size, n_experts, tgt_vocab_size, 
+                 sampled_softmax=False, 
+                 n_samples=None,
+                 gumble=False,
+                 straight_through=False):
         super(MoEDecoder, self).__init__()
         
         self.n_experts = n_experts
         self.tgt_vocab_size = tgt_vocab_size
         self.sampled_softmax = sampled_softmax
         self.n_samples = n_samples
+        self.gumble = gumble
+        self.straight_through = straight_through
         # gating
         self.Wg = nn.Parameter(torch.Tensor(input_size, n_experts)) 
         # experts
@@ -100,10 +106,17 @@ class MoEDecoder(nn.Module):
             self.projection = SampledSoftmax(tgt_vocab_size, n_samples, input_size, shared_by_experts=n_experts)
         else:
             self.projection = nn.Linear(input_size, n_experts * tgt_vocab_size)
+        if self.gumble:
+            self.gumble_softmax = GumbleSoftmax(straight_through=self.straight_through)
         
     def forward(self, input_, labels=None):
         bs = input_.size(0)
-        expert_probs = nn.functional.log_softmax(input_.mm(self.Wg), dim=1).exp()
+        expert_logits = input_.mm(self.Wg)
+        if self.gumble:
+            expert_probs = self.gumble_softmax(expert_logits)
+            import ipdb; ipdb.set_trace()
+        else:
+            expert_probs = nn.functional.log_softmax(expert_logits, dim=1).exp()
         if self.sampled_softmax:
             all_logits = self.projection(input_, labels)
         else:
@@ -194,3 +207,32 @@ class SampledSoftmax(nn.Module):
             return self.params(inputs).view(-1, self.ntokens, self.shared_by_experts)
         else:
             return self.params(inputs)
+
+'''
+Modified from https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax/530
+'''
+class GumbleSoftmax(nn.Module):
+    
+    def __init__(self, straight_through=False):
+        super(GumbleSoftmax, self).__init__()
+        self.temperature = 1.0
+        self.straight_through = straight_through
+    
+    def anneal(self):
+        raise NotImplementedError()
+    
+    def sample(self, input_, eps=1e-20):
+        noise = torch.rand(input_.size())
+        noise = -(-(noise + eps).log() + eps).log()
+        return get_variable(noise)
+        
+    def forward(self, input_):
+        noise = self.sample(input_)
+        x = (input_ + noise) / self.temperature
+        x = nn.functional.log_softmax(x, dim=1).exp() # NOTE use exp() since it's used for expert gating
+        if self.straight_through:
+            x_hard_val, _ = x.max(dim=1, keepdim=True) # bs x 1
+            x_hard = (x_hard_val == x).float()
+            return (x_hard - x).detach() + x
+        else:
+            return x

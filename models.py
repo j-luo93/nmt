@@ -61,6 +61,8 @@ class Seq2Seq(BaseModel):
         self.num_experts = kwargs['num_experts']
         self.sampled_softmax = kwargs['sampled_softmax']
         self.num_samples = kwargs['num_samples']
+        self.gumble = kwargs['gumble']
+        self.straight_through = kwargs['straight_through']
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
         self.encoder = nn.LSTM(self.cell_dim, self.cell_dim, 
@@ -70,7 +72,11 @@ class Seq2Seq(BaseModel):
         self.decoder = MultiLayerRNNCell(self.num_layers, 2 * self.cell_dim, self.cell_dim, module='LSTM', dropout=kwargs['dropout']) # bidirectional 
 
         if self.MoE:
-            self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size, sampled_softmax=self.sampled_softmax, n_samples=self.num_samples)
+            self.proj = MoEDecoder(self.cell_dim, self.num_experts, self.tgt_vocab_size, 
+                                   sampled_softmax=self.sampled_softmax, 
+                                   n_samples=self.num_samples, 
+                                   gumble=self.gumble,
+                                   straight_through=self.straight_through)
         else:
             if self.sampled_softmax:
                 self.proj = SampledSoftmax(self.tgt_vocab_size, self.num_samples, self.cell_dim)

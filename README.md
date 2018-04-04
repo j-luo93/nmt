@@ -3,7 +3,8 @@
 -[x] sampled softmax
 -[x] sampled softmax w/ MoE
 -[x] pwv
--[ ] gumble
+-[x] gumble
+-[ ] sparse MoE w/ gumble
 -[ ] control unit
 -[ ] MoE/SS codebase rewrite
 
