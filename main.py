@@ -176,6 +176,7 @@ def parse_args():
     train_group.add_argument('--num_samples', '-ns', default=512, type=int, help='Number of samples to use for sampled softmax')
     train_group.add_argument('-gumble', '-g', action='store_true', help='Use gumble softmax for MoE gating')
     train_group.add_argument('-straight_through', '-st', action='store_true', help='Use ST gumble softmax for MoE gating')
+    train_group.add_argument('-sparse', '-sp', action='store_true', help='Use sparse MoE; has to be used with straight through')
     # arguments for testing
     test_group = parser.add_argument_group('Test')
     test_group.add_argument('--test_path', '-tp', help='test path', metavar='')
@@ -191,6 +192,13 @@ def parse_args():
 
     args = parser.parse_args()
     
+    # check args
+    assert args.mode in ['train', 'test', 'inspect'], args.mode
+    if args.straight_through:
+        assert args.gumble 
+    if args.sparse:
+        assert args.MoE and args.straight_through
+    
     if args.cuda:
         os.environ['USE_CUDA'] = '1'
 
@@ -201,7 +209,6 @@ def parse_args():
         args.src_vocab_size = 500
         args.tgt_vocab_size = 500
         
-    assert args.mode in ['train', 'test', 'inspect'], args.mode
     
     # set up training directory and temporary files
     now = datetime.now()

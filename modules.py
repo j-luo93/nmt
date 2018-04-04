@@ -90,7 +90,8 @@ class MoEDecoder(nn.Module):
                  sampled_softmax=False, 
                  n_samples=None,
                  gumble=False,
-                 straight_through=False):
+                 straight_through=False,
+                 sparse=False):
         super(MoEDecoder, self).__init__()
         
         self.n_experts = n_experts
@@ -99,6 +100,8 @@ class MoEDecoder(nn.Module):
         self.n_samples = n_samples
         self.gumble = gumble
         self.straight_through = straight_through
+        self.sparse = sparse
+        
         # gating
         self.Wg = nn.Parameter(torch.Tensor(input_size, n_experts)) 
         # experts
@@ -107,21 +110,31 @@ class MoEDecoder(nn.Module):
         else:
             self.projection = nn.Linear(input_size, n_experts * tgt_vocab_size)
         if self.gumble:
-            self.gumble_softmax = GumbleSoftmax(straight_through=self.straight_through)
+            self.gumble_softmax = GumbleSoftmax(straight_through=self.straight_through, sparse=self.sparse)
         
     def forward(self, input_, labels=None):
         bs = input_.size(0)
         expert_logits = input_.mm(self.Wg)
-        if self.gumble:
-            expert_probs = self.gumble_softmax(expert_logits)
-            import ipdb; ipdb.set_trace()
+        if self.sparse:
+            expert_probs, expert_inds = self.gumble_softmax(expert_logits) # NOTE expert_probs here are 1.0s
+            if self.sampled_softmax:
+                raise NotImplementedError() # TODO maybe we can get rid of this altogether.
+            else:
+                expert_weight = self.projection.weight.view(self.n_experts, self.tgt_vocab_size, -1)[expert_inds] # bs x tvs x d
+                expert_bias = self.projection.bias.view(self.n_experts, self.tgt_vocab_size)[expert_inds] # bs x tvs
+                logits = (expert_weight * input_.unsqueeze(dim=1)).sum(dim=2) + expert_bias # bs x tvs 
+                return logits
         else:
-            expert_probs = nn.functional.log_softmax(expert_logits, dim=1).exp()
-        if self.sampled_softmax:
-            all_logits = self.projection(input_, labels)
-        else:
-            all_logits = self.projection(input_).view(bs, self.n_experts, self.tgt_vocab_size)
-        return expert_probs, all_logits
+            if self.gumble:
+                expert_probs = self.gumble_softmax(expert_logits)
+            else:
+                expert_probs = nn.functional.log_softmax(expert_logits, dim=1).exp()
+                
+            if self.sampled_softmax:
+                all_logits = self.projection(input_, labels)
+            else:
+                all_logits = self.projection(input_).view(bs, self.n_experts, self.tgt_vocab_size)
+            return expert_probs, all_logits
 
 '''
 Modified from https://github.com/rdspring1/PyTorch_GBW_LM
@@ -213,10 +226,11 @@ Modified from https://discuss.pytorch.org/t/stop-gradients-for-st-gumbel-softmax
 '''
 class GumbleSoftmax(nn.Module):
     
-    def __init__(self, straight_through=False):
+    def __init__(self, straight_through=False, sparse=False):
         super(GumbleSoftmax, self).__init__()
         self.temperature = 1.0
         self.straight_through = straight_through
+        self.sparse = sparse
     
     def anneal(self):
         raise NotImplementedError()
@@ -231,8 +245,13 @@ class GumbleSoftmax(nn.Module):
         x = (input_ + noise) / self.temperature
         x = nn.functional.log_softmax(x, dim=1).exp() # NOTE use exp() since it's used for expert gating
         if self.straight_through:
-            x_hard_val, _ = x.max(dim=1, keepdim=True) # bs x 1
-            x_hard = (x_hard_val == x).float()
-            return (x_hard - x).detach() + x
+            if self.sparse:
+                x_hard_val, x_hard_ind = x.max(dim=1) # bs 
+                x_hard = get_values(x_hard_val.size(), value=1.0) # bs
+                return (x_hard - x_hard_val).detach() + x_hard_val, x_hard_ind # NOTE return both values and indices
+            else:
+                x_hard_val, _ = x.max(dim=1, keepdim=True) # bs x 1
+                x_hard = (x_hard_val == x).float()
+                return (x_hard - x).detach() + x
         else:
             return x

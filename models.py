@@ -63,6 +63,9 @@ class Seq2Seq(BaseModel):
         self.num_samples = kwargs['num_samples']
         self.gumble = kwargs['gumble']
         self.straight_through = kwargs['straight_through']
+        self.sparse = kwargs['sparse']
+        
+        # define modules
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
         self.encoder = nn.LSTM(self.cell_dim, self.cell_dim, 
@@ -76,7 +79,8 @@ class Seq2Seq(BaseModel):
                                    sampled_softmax=self.sampled_softmax, 
                                    n_samples=self.num_samples, 
                                    gumble=self.gumble,
-                                   straight_through=self.straight_through)
+                                   straight_through=self.straight_through,
+                                   sparse=self.sparse)
         else:
             if self.sampled_softmax:
                 self.proj = SampledSoftmax(self.tgt_vocab_size, self.num_samples, self.cell_dim)
@@ -135,21 +139,32 @@ class Seq2Seq(BaseModel):
                     expert_probs, all_logits = self.proj(self.drop(att), labels=labels)
                     all_log_probs = nn.functional.log_softmax(all_logits, dim=1) # bs x tvs x ne
                 else:
-                    expert_probs, all_logits = self.proj(self.drop(att))
-                    all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
+                    if self.sparse:
+                        logits = self.proj(self.drop(att)) # bs x tvs
+                        log_probs = nn.functional.log_softmax(logits, dim=1) # bs x tvs
+                    else:
+                        expert_probs, all_logits = self.proj(self.drop(att))
+                        all_log_probs = nn.functional.log_softmax(all_logits, dim=2) # bs x ne x tvs
+                        
                 if not self.training:
                     if self.sampled_softmax:
                         preds.append((all_log_probs.exp() * expert_probs.view(bs, 1, self.num_experts)).sum(dim=2).max(dim=1)[1])
                     else:
-                        preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
+                        if self.sparse:
+                            preds.append(log_probs.max(dim=1)[1])
+                        else:
+                            preds.append((all_log_probs.exp() * expert_probs.view(bs, self.num_experts, 1)).sum(dim=1).max(dim=1)[1])
 
                 if compute_loss:
                     if self.sampled_softmax:
                         all_losses = all_log_probs[:, 0, :] # bs x ne
                         losses.append((expert_probs * all_losses).sum(dim=1))
                     else:
-                        all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
-                        losses.append((expert_probs * all_losses).sum(dim=1))
+                        if self.sparse:
+                            losses.append(log_probs.gather(1, target[j].view(-1, 1)).view(-1))
+                        else:
+                            all_losses = all_log_probs.gather(2, target[j].view(bs, 1, 1).expand(bs, self.num_experts, 1)).squeeze(dim=2) # bs x ne
+                            losses.append((expert_probs * all_losses).sum(dim=1))
                     if self.diversify:
                         reg_loss.append(expert_probs)
             else:

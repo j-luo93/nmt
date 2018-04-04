@@ -4,8 +4,9 @@
 -[x] sampled softmax w/ MoE
 -[x] pwv
 -[x] gumble
--[ ] sparse MoE w/ gumble
+-[x] sparse MoE w/ gumble
 -[ ] control unit
+-[ ] beam search
 -[ ] MoE/SS codebase rewrite
 
 ## Initial Setup
