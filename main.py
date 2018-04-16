@@ -22,11 +22,12 @@ from trainer import bleu_test, translate_
 from datastream import DataStream, DataStreamRandom
 from trainer import Trainer
 
-def prepare_corpus(names, paths, buckets, max_size=0, use_all=False, vocabs=None, method='both', replace_unk=False):
+def prepare_corpus(names, paths, buckets, max_size=0, use_all=False, vocabs=None, method='both', replace_unk=False, use_morph=False):
     corpus = utils.corpus.Corpus(max_size=max_size)
     # add columns
     for name, path in zip(names, paths):
-        corpus.add_entry(name, path)
+        morph = use_morph and name == 'src'
+        corpus.add_entry(name, path, morph=morph)
     # construct a dictionary
     dictionary = utils.vocab.Dictionary(corpus) if method == 'both' and replace_unk else None
     # indexify sentences
@@ -43,7 +44,10 @@ def prepare_corpus(names, paths, buckets, max_size=0, use_all=False, vocabs=None
     return corpus
 
 def train(args):
-    train_src_data_path = '%s/train.%s' %(args.data_dir, args.src)
+    if args.use_morph:
+        train_src_data_path = '%s/train.seg.%s' %(args.data_dir, args.src)
+    else:
+        train_src_data_path = '%s/train.%s' %(args.data_dir, args.src)
     train_tgt_data_path = '%s/train.%s' %(args.data_dir, args.tgt)
     names = ['src', 'tgt']
     paths = [train_src_data_path, train_tgt_data_path]
@@ -55,10 +59,14 @@ def train(args):
                                   buckets, 
                                   max_size=args.max_size, 
                                   vocabs=vocabs,
-                                  replace_unk=args.replace_unk)
+                                  replace_unk=args.replace_unk,
+                                  use_morph=args.use_morph)
     
     dictionary = train_corpus.dictionary 
-    dev_src_data_path = '%s/dev.%s' %(args.data_dir, args.src) 
+    if args.use_morph:
+        dev_src_data_path = '%s/dev.seg.%s' %(args.data_dir, args.src)
+    else:
+        dev_src_data_path = '%s/dev.%s' %(args.data_dir, args.src)
     dev_tgt_data_path = '%s/dev.%s' %(args.data_dir, args.tgt)
     if args.DEBUG: # use smaller dev set for debugging 
         if not os.path.isfile(dev_src_data_path + '.debug'):
@@ -73,7 +81,8 @@ def train(args):
                                 max_size=args.max_size, 
                                 use_all=True, # use all data for dev, which means do NOT discard very long sentences
                                 vocabs=vocabs,
-                                method='src')
+                                method='src',
+                                use_morph=args.use_morph)
     
     train_set = DataStreamRandom(train_corpus, vocabs=vocabs, **vars(args)) # random batching
     dev_set = DataStream(dev_corpus, vocabs=vocabs, **vars(args)) # no random batching, iterated by length
@@ -93,6 +102,9 @@ def test(args):
     if args.replace_unk:
         names.append('almt')
         paths.append('%s/train.align' %(args.data_dir))
+    if args.use_morph:
+        names.append('morph')
+        paths.append('%s/seg.%s' %(args.data_dir, args.src))
     train_corpus = prepare_corpus(names,
                                   paths,
                                   buckets, 
@@ -179,6 +191,7 @@ def parse_args():
     model_group.add_argument('--num_layers', '-nl', default=1, type=int, help='Number of layers', metavar='')
     model_group.add_argument('--src_vocab_size', '-svs', default=30000, type=int, help='Vocabulary size for source language', metavar='')
     model_group.add_argument('--tgt_vocab_size', '-tvs', default=15000, type=int, help='Vocabulary size for target language', metavar='')
+    model_group.add_argument('-use_morph', '-um', action='store_true', help='Use morpheme embeddings')
 
     args = parser.parse_args()
     
@@ -219,6 +232,12 @@ if __name__ == '__main__':
     src_vocab = utils.vocab.Vocab(src_vocab_path, 0, threshold=2)
     tgt_vocab = utils.vocab.Vocab(tgt_vocab_path, args.tgt_vocab_size, threshold=2, replace_unk=args.replace_unk)
     vocabs = {'src': src_vocab, 'tgt': tgt_vocab}
+    if args.use_morph:
+        morph_vocab_path = '%s/vocab.seg.%s' %(args.data_dir, args.src)
+        utils.vocab.prepare_vocab('%s/train.seg.%s' %(args.data_dir, args.src), morph_vocab_path, 0, morph=True)
+        morph_vocab = utils.vocab.Vocab(morph_vocab_path, 0, threshold=2)
+        vocabs['morph'] = morph_vocab
+        args.morph_vocab_size = len(morph_vocab)
     
     # change vocab size after thresholdding
     args.src_vocab_size = len(src_vocab)

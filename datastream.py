@@ -65,7 +65,10 @@ class Batch(Table):
         exemptions = set(['real_src_length'])
         for entry_name, entry in self.entry_dict.iteritems():
             if entry_name not in exemptions:
-                self.entry_dict[entry_name] = np.transpose(entry)
+                if entry.ndim == 2:
+                    self.entry_dict[entry_name] = np.transpose(entry)
+                elif entry.ndim == 3:
+                    self.entry_dict[entry_name] = np.transpose(entry, (1, 0, 2))
     
     # wrap it in tensor, and possibly move to gpu
     def _package(self):
@@ -87,7 +90,8 @@ class DataStreamBase(object):
         self.files = self.corpus.files
         
         self.batch_size = kwargs['batch_size']
-
+        self.use_morph = kwargs['use_morph']
+        
     def __len__(self):
         return sum(map(len, self.corpus.indice_bins))
         
@@ -97,6 +101,20 @@ class DataStreamBase(object):
         sort_indices = np.argsort(real_src_length)[::-1]
         real_src_length = real_src_length[sort_indices] + 1 # include EOS or SOS
         idx = idx[sort_indices]
+        
+        if self.use_morph:
+            size_enc_padded = max(next_batch['src_length']) + 1
+            n_morph = len(next_batch['morph'][0][0]) # already padded
+            morphs = list()
+            morph_weights = list()
+            for i in sort_indices:
+                _morphs = next_batch['morph'][i]
+                _morph_weights = next_batch['morph_weight'][i]
+                while len(_morphs) < size_enc_padded:
+                    _morphs += [[PAD_ID] * n_morph]
+                    _morph_weights += [[0.0] * n_morph]
+                morphs.append(_morphs)
+                morph_weights.append(_morph_weights)
         
         if 'tgt' in next_batch:
             input_enc, input_dec, target, weight = list(), list(), list(), list()
@@ -137,6 +155,10 @@ class DataStreamBase(object):
         if 'almt' in next_batch:
             batch.add_entry('alignment', alignment, 'int64')
             #batch.add_entry('alignment_weight', alignment_weight, 'float32')
+        if self.use_morph:
+            batch.add_entry('morph', morphs, 'int64')
+            batch.add_entry('morph_weight', morph_weights, 'float32')
+            
         batch.prepare()
         # HACK
         batch.src_tokens = [next_batch['src_tokens'][si] for si in sort_indices]

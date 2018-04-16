@@ -3,9 +3,11 @@ from __future__ import division, print_function
 import sys
 
 from table import Table
-from vocab import UNK_ID, POS_UNK_IDs
+from vocab import UNK_ID, POS_UNK_IDs, _PAD, PAD_ID
 
 import codecs
+
+MAX_MORPH = 5 # maximum amount of morphemes per token
 
 class Buckets(object):
     
@@ -31,12 +33,15 @@ class Corpus(Table):
         self.files = dict() # where we get the sentences
         
     # add entry from value source file, instead of directly from value
-    def add_entry(self, name, value_source):
+    def add_entry(self, name, value_source, morph=False):
         assert name in ['src', 'tgt', 'almt'], '%s not supported' %name
         
         self.files[name] = value_source
+        
+        value = list()
+        morph_value = list()
+        cnt_too_long = 0
         with codecs.open(value_source, 'r', 'utf8') as fin:
-            value = list()
             for i, line in enumerate(fin):
                 if name == 'almt':
                     parts = line.strip().split()
@@ -50,26 +55,60 @@ class Corpus(Table):
                     assert all(map(lambda x: x != -1, almt))
                     value.append(almt)
                 else:
-                    value.append(line.strip().split())
+                    if morph:
+                        tokens = line.strip().split()
+                        segs = list()
+                        for token in tokens:
+                            orig_segs = token.split('-')
+                            if len(orig_segs) > MAX_MORPH:
+                                cnt_too_long += 1
+                                orig_segs = orig_segs[:MAX_MORPH]
+                            elif len(orig_segs) < MAX_MORPH:
+                                orig_segs = orig_segs + [_PAD] * (MAX_MORPH - len(orig_segs))
+                            segs.append(orig_segs)
+                        value.append(tokens)
+                        morph_value.append(segs)
+                    else:
+                        value.append(line.strip().split())
                 if len(value) % 1000 == 0:
                     print('\rRead %d sentences from %s' %(len(value), value_source), end='')
                     sys.stdout.flush()
                 if len(value) == self.max_size:
                     break
-        print('\rRead %d sentences from %s in total' %(len(value), value_source))
+            print('\rRead %d sentences from %s in total' %(len(value), value_source))
+        
         super(Corpus, self).add_entry(name, value, visible=False)
-    
+        if len(morph_value) > 0:
+            super(Corpus, self).add_entry('morph', morph_value, visible=False)
+            print('%d tokens with too long morphemes' %cnt_too_long)
+            
     def indexify(self, name, vocab):
         new_entry = list()
+        new_weight_entry = list()
         for e_i, entry in enumerate(self.entry_dict[name]):
             idx = list()
+            morph_weights = list() # HACK compute morph weights here
             for i, w in enumerate(entry):
-                iw = vocab[w]
-                idx.append(iw)
+                if name == 'morph':
+                    idx_entry = list()
+                    weight_entry = list()
+                    for t in w:
+                        it = vocab[t]
+                        idx_entry.append(it)
+                        weight_entry.append(float(it != PAD_ID))
+                    idx.append(idx_entry)
+                    morph_weights.append(weight_entry)
+                else:
+                    iw = vocab[w]
+                    idx.append(iw)
             new_entry.append(idx)
+            new_weight_entry.append(morph_weights)
         if name == 'src':
             self.entry_dict['src_tokens'] = self.entry_dict['src']
             self.entry_dict['src'] = new_entry
+        elif name == 'morph':
+            self.entry_dict['morph'] = new_entry
+            self.entry_dict['morph_weight'] = new_weight_entry
         else:
             self.entry_dict[name] = new_entry
     

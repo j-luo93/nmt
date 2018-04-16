@@ -23,6 +23,12 @@ class BaseModel(nn.Module):
         mask_src = (input_enc != PAD_ID).float()
         sl, bs = input_enc.size()
         inp_enc = self.src_emb(input_enc)
+        
+        if self.use_morph:
+            morph_s = self.morph_emb(get_variable(batch.morph)).sum(dim=2)
+            morph_l = get_variable(batch.morph_weight).sum(dim=2, keepdim=True)
+            inp_enc = inp_enc + morph_s / morph_l
+        
         inp_enc = self.drop(inp_enc) # NOTE dropout
         inp_packed = nn.utils.rnn.pack_padded_sequence(inp_enc, rsl)
         h = get_zeros([2 * self.num_layers, bs, self.cell_dim], training=self.training) # NOTE bidirectional, therefore 2
@@ -55,6 +61,9 @@ class Seq2Seq(BaseModel):
         self.num_layers = kwargs['num_layers']
         self.src_vocab_size = kwargs['src_vocab_size']
         self.tgt_vocab_size = kwargs['tgt_vocab_size']
+        
+        self.use_morph = kwargs['use_morph']
+        
         self.src_emb = nn.Embedding(self.src_vocab_size, self.cell_dim)
         self.tgt_emb = nn.Embedding(self.tgt_vocab_size, self.cell_dim)
         self.encoder = nn.LSTM(self.cell_dim, self.cell_dim, 
@@ -65,6 +74,10 @@ class Seq2Seq(BaseModel):
 
         self.proj = nn.Linear(self.cell_dim, self.tgt_vocab_size)
         self.drop = nn.Dropout(kwargs['dropout'])
+        
+        if self.use_morph:
+            self.morph_vocab_size = kwargs['morph_vocab_size']
+            self.morph_emb = nn.Embedding(self.morph_vocab_size, self.cell_dim)
 
     def search(self, batch, **kwargs):
         annotations, mask_src = self.encode(batch)

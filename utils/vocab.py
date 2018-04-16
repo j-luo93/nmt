@@ -24,7 +24,7 @@ EOS_ID = 2
 UNK_ID = 3
 POS_UNK_IDs = [11 + x for x in xrange(-7, 8)]
 
-def prepare_vocab(data_path, vocab_path, size, threshold=0):
+def prepare_vocab(data_path, vocab_path, size, threshold=0, morph=True):
     if os.path.isfile(vocab_path): 
         print('Vocabulary file already exists.', file=sys.stderr)
         return
@@ -35,7 +35,11 @@ def prepare_vocab(data_path, vocab_path, size, threshold=0):
             for line in fin:
                 tokens = line.strip().split()
                 for t in tokens:
-                    cnt[t] += 1
+                    if morph:
+                        for tt in t.split('|'):
+                            cnt[tt] += 1
+                    else:
+                        cnt[t] += 1
             cnt = dict(filter(lambda x: x[1] >= threshold, cnt.iteritems()))
             vocab = sorted(cnt.iteritems(), key=itemgetter(1), reverse=True)
             if size > 0:
