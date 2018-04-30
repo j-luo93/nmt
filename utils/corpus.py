@@ -58,16 +58,19 @@ class Corpus(Table):
                     if morph:
                         tokens = line.strip().split()
                         segs = list()
+                        new_tokens = list()
                         for token in tokens:
-                            orig_segs = token.split('-')
+                            orig_segs = token.split('|')
+                            new_tokens.append(''.join(orig_segs))
                             if len(orig_segs) > MAX_MORPH:
                                 cnt_too_long += 1
                                 orig_segs = orig_segs[:MAX_MORPH]
                             elif len(orig_segs) < MAX_MORPH:
                                 orig_segs = orig_segs + [_PAD] * (MAX_MORPH - len(orig_segs))
                             segs.append(orig_segs)
-                        value.append(tokens)
+                        value.append(new_tokens)
                         morph_value.append(segs)
+                        assert len(tokens) == len(segs)
                     else:
                         value.append(line.strip().split())
                 if len(value) % 1000 == 0:

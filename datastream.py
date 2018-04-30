@@ -110,9 +110,10 @@ class DataStreamBase(object):
             for i in sort_indices:
                 _morphs = next_batch['morph'][i]
                 _morph_weights = next_batch['morph_weight'][i]
-                while len(_morphs) < size_enc_padded:
-                    _morphs += [[PAD_ID] * n_morph]
-                    _morph_weights += [[0.0] * n_morph]
+                if len(_morphs) < size_enc_padded:
+                    diff = size_enc_padded - len(_morphs)
+                    _morphs = _morphs + [[PAD_ID] * n_morph] * diff
+                    _morph_weights = _morph_weights + [[0.0] * n_morph] * diff
                 morphs.append(_morphs)
                 morph_weights.append(_morph_weights)
         

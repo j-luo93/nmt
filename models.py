@@ -27,7 +27,8 @@ class BaseModel(nn.Module):
         if self.use_morph:
             morph_s = self.morph_emb(get_variable(batch.morph)).sum(dim=2)
             morph_l = get_variable(batch.morph_weight).sum(dim=2, keepdim=True)
-            inp_enc = inp_enc + morph_s / morph_l
+            morph_num = torch.where(morph_l == 0.0, get_zeros(morph_l.size()), 1 / morph_l)
+            inp_enc = inp_enc + morph_s * morph_num
         
         inp_enc = self.drop(inp_enc) # NOTE dropout
         inp_packed = nn.utils.rnn.pack_padded_sequence(inp_enc, rsl)

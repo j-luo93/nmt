@@ -33,7 +33,8 @@ def prepare_corpus(names, paths, buckets, max_size=0, use_all=False, vocabs=None
     # indexify sentences
     if vocabs is not None:
         for k in vocabs:
-            corpus.indexify(k, vocabs[k])
+            if k in corpus.entry_dict:
+                corpus.indexify(k, vocabs[k])
     # count lengths
     for entry_name in corpus.entry_dict.keys():
         if entry_name in ['src', 'tgt']:
@@ -54,6 +55,7 @@ def train(args):
     if args.replace_unk:
         names.append('almt')
         paths.append('%s/train.align' %(args.data_dir))
+    #import ipdb; ipdb.set_trace()
     train_corpus = prepare_corpus(names,
                                   paths,
                                   buckets, 
@@ -95,35 +97,37 @@ def train(args):
     trainer.train(train_set, dev_set, tgt_vocab, dictionary=dictionary)
     
 def test(args):
-    train_src_data_path = '%s/train.%s' %(args.data_dir, args.src)
+    infix = 'seg.' if args.use_morph else ''
+    train_src_data_path = '%s/train.%s%s' %(args.data_dir, infix, args.src)
     train_tgt_data_path = '%s/train.%s' %(args.data_dir, args.tgt)
     names = ['src', 'tgt']
     paths = [train_src_data_path, train_tgt_data_path]
     if args.replace_unk:
         names.append('almt')
         paths.append('%s/train.align' %(args.data_dir))
-    if args.use_morph:
-        names.append('morph')
-        paths.append('%s/seg.%s' %(args.data_dir, args.src))
+    #import ipdb; ipdb.set_trace()
     train_corpus = prepare_corpus(names,
                                   paths,
                                   buckets, 
                                   max_size=args.max_size, 
                                   vocabs=vocabs,
-                                  replace_unk=args.replace_unk)
+                                  replace_unk=args.replace_unk,
+                                  use_morph=args.use_morph)
     
     dictionary = train_corpus.dictionary 
 
     test_src_data_path = '%s/test.%s' %(args.data_dir, args.src) 
-    #test_tgt_data_path = '%s/test.%s' %(args.data_dir, args.tgt)
+    if args.use_morph:
+        test_src_data_path = '%s/test.seg.%s' %(args.data_dir, args.src)
+    test_tgt_data_path = '%s/test.%s' %(args.data_dir, args.tgt)
     if args.test_path is not None:
-        test_src_data_path = '%s.%s' %(args.test_path, args.src) 
+        test_src_data_path = '%s.%s%s' %(args.test_path, infix, args.src) 
         #test_tgt_data_path = '%s.%s' %(args.test_path, args.tgt)
-    else:
-        test_src_data_path = '%s/test.%s' %(args.data_dir, args.src) 
+    #else:
+    #    test_src_data_path = '%s/test.%s' %(args.data_dir, args.src) 
         #test_tgt_data_path = '%s/test.%s' %(args.data_dir, args.tgt)
 
-    test_corpus = prepare_corpus(['src'], [test_src_data_path], buckets, vocabs={'src': vocabs['src']}, use_all=True, method='src') 
+    test_corpus = prepare_corpus(['src'], [test_src_data_path], buckets, vocabs=vocabs, use_all=True, method='src', use_morph=args.use_morph) 
     test_set = DataStream(test_corpus, vocabs=vocabs, **vars(args))
     
     model.eval()
@@ -137,7 +141,8 @@ def test(args):
         preds, alignments, _ = model.search(batch) 
         translate_(translations, preds, batch, vocabs['tgt'], src_tokens=batch.src_tokens, dictionary=dictionary, alignments=alignments)
     print()
-    bleu_test(translations, test_set, args.bleu_path, gold_path=None) # NOTE no bleu evaluation for test
+    gold_path = test_tgt_data_path if args.test_path is None else None
+    bleu_test(translations, test_set, args.bleu_path, gold_path=gold_path) # NOTE no bleu evaluation for test
         
 def init_params(model):
     for p in model.state_dict().itervalues():

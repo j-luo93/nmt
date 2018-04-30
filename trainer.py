@@ -23,7 +23,7 @@ def create_optimizer(mod_or_params, lr, params=False):
 
 # inplace translate
 def translate_(translations, pred_ids, batch, vocab, src_tokens=None, dictionary=None, alignments=None):
-    for idx, (i, ids) in enumerate(zip(batch.idx, pred_ids)): 
+    for idx, (i, ids) in enumerate(zip(batch.idx.cpu().numpy(), pred_ids)): 
         assert i not in translations
         translations[i] = id2token(ids, vocab, src_tokens=src_tokens[idx], dictionary=dictionary, alignments=alignments[idx])
 
